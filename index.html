@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#020408">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="地震速報">
+<link rel="manifest" href="manifest.json">
+<title>地震速報モニター</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+JP:wght@300;400;700&display=swap');
+
+  :root {
+    --bg: #020408;
+    --panel: #060d18;
+    --border: #0a2a4a;
+    --accent: #00d4ff;
+    --warn: #ff6600;
+    --danger: #ff0033;
+    --safe: #00ff88;
+    --dim: #1a3a5c;
+    --text: #c8e8ff;
+    --grid: rgba(0,212,255,0.04);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Noto Sans JP', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* グリッド背景 */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* スキャンライン */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.15) 2px,
+      rgba(0,0,0,0.15) 4px
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 20px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* ヘッダー */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 16px;
+  }
+
+  .logo {
+    font-family: 'Orbitron', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: var(--accent);
+    text-shadow: 0 0 20px var(--accent);
+  }
+
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: #4a7a9b;
+  }
+
+  .live-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--safe);
+    border-radius: 50%;
+    animation: pulse-dot 1.5s ease-in-out infinite;
+    box-shadow: 0 0 8px var(--safe);
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.7); }
+  }
+
+  /* メインモニター */
+  .monitor {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 30px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    flex: 1;
+    min-height: 320px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+  }
+
+  .monitor::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0.6;
+  }
+
+  /* 待機状態 */
+  .standby {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .standby-ring {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    border: 2px solid var(--dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  .standby-ring::before, .standby-ring::after {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+    border: 1px solid var(--dim);
+    animation: sonar 3s ease-out infinite;
+  }
+
+  .standby-ring::before { width: 150%; height: 150%; animation-delay: 0s; }
+  .standby-ring::after { width: 200%; height: 200%; animation-delay: 1s; }
+
+  @keyframes sonar {
+    0% { opacity: 0.5; transform: scale(0.8); }
+    100% { opacity: 0; transform: scale(1.2); }
+  }
+
+  .standby-icon {
+    font-size: 40px;
+    opacity: 0.3;
+  }
+
+  .standby-text {
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    letter-spacing: 4px;
+    color: #2a4a6a;
+  }
+
+  /* アラート表示 */
+  .alert-display {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+  }
+
+  .alert-display.active { display: flex; }
+  .standby { display: flex; }
+  .standby.hidden { display: none; }
+
+  .alert-label {
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    letter-spacing: 6px;
+    padding: 4px 16px;
+    border: 1px solid currentColor;
+  }
+
+  .alert-label.level-3 { color: #ffcc00; border-color: #ffcc00; text-shadow: 0 0 10px #ffcc00; }
+  .alert-label.level-4 { color: var(--warn); border-color: var(--warn); text-shadow: 0 0 10px var(--warn); }
+  .alert-label.level-5 { color: var(--danger); border-color: var(--danger); text-shadow: 0 0 10px var(--danger); }
+
+  .quake-time {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(28px, 5vw, 48px);
+    font-weight: 900;
+    letter-spacing: 2px;
+    color: white;
+    text-shadow: 0 0 30px rgba(255,255,255,0.5);
+  }
+
+  .quake-location {
+    font-size: clamp(22px, 4vw, 36px);
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: var(--accent);
+    text-shadow: 0 0 20px var(--accent);
+  }
+
+  .quake-magnitude {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .mag-label {
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    letter-spacing: 3px;
+    opacity: 0.6;
+  }
+
+  .mag-value {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(40px, 8vw, 72px);
+    font-weight: 900;
+    line-height: 1;
+  }
+
+  .quake-intensity {
+    font-family: 'Orbitron', monospace;
+    font-size: 14px;
+    letter-spacing: 3px;
+    opacity: 0.8;
+  }
+
+  /* 点滅アニメーション */
+  .blink-slow {
+    animation: blink-slow 1.2s ease-in-out infinite;
+  }
+
+  .blink-fast {
+    animation: blink-fast 0.4s ease-in-out infinite;
+  }
+
+  @keyframes blink-slow {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.1; }
+  }
+
+  @keyframes blink-fast {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  /* 背景フラッシュ */
+  .flash-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0;
+  }
+
+  .flash-overlay.active {
+    animation: bg-flash 1s ease-in-out infinite;
+  }
+
+  @keyframes bg-flash {
+    0%, 100% { opacity: 0; }
+    50% { opacity: 0.06; }
+  }
+
+  /* 情報グリッド */
+  .info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+  }
+
+  .info-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 16px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .info-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+    transform: scaleX(0);
+    transition: transform 0.3s;
+  }
+
+  .info-card:hover::after { transform: scaleX(1); }
+
+  .info-card-label {
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: #4a7a9b;
+    margin-bottom: 8px;
+    font-family: 'Orbitron', monospace;
+  }
+
+  .info-card-value {
+    font-family: 'Orbitron', monospace;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  /* 履歴 */
+  .history {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 16px;
+  }
+
+  .history-header {
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 4px;
+    color: #4a7a9b;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 180px;
+    overflow-y: auto;
+  }
+
+  .history-list::-webkit-scrollbar { width: 2px; }
+  .history-list::-webkit-scrollbar-thumb { background: var(--dim); }
+
+  .history-item {
+    display: grid;
+    grid-template-columns: 140px 1fr auto auto;
+    gap: 12px;
+    align-items: center;
+    padding: 8px 10px;
+    background: rgba(0,212,255,0.02);
+    border-left: 2px solid var(--border);
+    font-size: 12px;
+    transition: background 0.2s;
+  }
+
+  .history-item:hover { background: rgba(0,212,255,0.05); }
+
+  .history-item .h-time { color: #4a7a9b; font-family: 'Orbitron', monospace; font-size: 10px; }
+  .history-item .h-loc { color: var(--text); }
+  .history-item .h-mag { font-family: 'Orbitron', monospace; font-weight: 700; color: var(--accent); }
+  .history-item .h-int { font-size: 10px; letter-spacing: 1px; }
+
+  .no-history {
+    text-align: center;
+    padding: 24px;
+    color: #2a4a6a;
+    font-size: 11px;
+    letter-spacing: 3px;
+  }
+
+  /* コントロール */
+  .controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 20px;
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 3px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--accent);
+    transform: translateX(-100%);
+    transition: transform 0.2s;
+    opacity: 0.1;
+  }
+
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn:hover::before { transform: translateX(0); }
+
+  .btn.primary { border-color: var(--accent); color: var(--accent); }
+  .btn.danger-btn { border-color: var(--danger); color: var(--danger); }
+
+  .sound-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: #4a7a9b;
+    cursor: pointer;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    transition: all 0.2s;
+  }
+
+  .sound-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
+  .toggle-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--safe);
+    box-shadow: 0 0 6px var(--safe);
+    transition: all 0.2s;
+  }
+
+  .toggle-dot.off { background: #2a4a6a; box-shadow: none; }
+
+  .interval-select {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    cursor: pointer;
+    outline: none;
+  }
+
+  .connection-info {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: #2a4a6a;
+    margin-left: auto;
+  }
+
+  .connected { color: var(--safe); }
+  .error { color: var(--danger); }
+
+  /* アラート時の枠点滅 */
+  @keyframes border-flash {
+    0%, 100% { border-color: var(--border); box-shadow: none; }
+    50% { border-color: var(--danger); box-shadow: 0 0 20px rgba(255,0,51,0.3); }
+  }
+
+  .monitor.alerting {
+    animation: border-flash 0.8s ease-in-out infinite;
+  }
+
+  /* レベル別カラー */
+  .level-3 .mag-value { color: #ffcc00; text-shadow: 0 0 20px #ffcc00; }
+  .level-4 .mag-value { color: var(--warn); text-shadow: 0 0 20px var(--warn); }
+  .level-5 .mag-value { color: var(--danger); text-shadow: 0 0 30px var(--danger); }
+
+  .level-3 .flash-overlay { background: #ffcc00; }
+  .level-4 .flash-overlay { background: var(--warn); }
+  .level-5 .flash-overlay { background: var(--danger); }
+
+  @media (max-width: 600px) {
+    .info-grid { grid-template-columns: 1fr 1fr; }
+    .history-item { grid-template-columns: 100px 1fr auto; }
+    .history-item .h-int { display: none; }
+    .controls { flex-direction: column; align-items: stretch; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- ヘッダー -->
+  <header>
+    <div class="logo">SEISMIC MONITOR</div>
+    <div class="status-bar">
+      <div class="live-dot" id="liveDot"></div>
+      <span id="statusText">監視中</span>
+      <span id="clockDisplay"></span>
+    </div>
+  </header>
+
+  <!-- メインモニター -->
+  <div class="monitor" id="mainMonitor">
+    <div class="flash-overlay" id="flashOverlay"></div>
+
+    <!-- 待機状態 -->
+    <div class="standby" id="standbyView">
+      <div class="standby-ring">
+        <div class="standby-icon">🌐</div>
+      </div>
+      <div class="standby-text">MONITORING — NO ALERT</div>
+    </div>
+
+    <!-- アラート表示 -->
+    <div class="alert-display" id="alertView">
+      <div class="alert-label blink-fast" id="alertLabel">震度3以上 検知</div>
+      <div class="quake-time blink-slow" id="quakeTime">--:--:--</div>
+      <div class="quake-location blink-slow" id="quakeLocation">---</div>
+      <div class="quake-magnitude">
+        <span class="mag-label">M</span>
+        <span class="mag-value blink-slow" id="quakeMag">--</span>
+      </div>
+      <div class="quake-intensity blink-slow" id="quakeIntensity">最大震度 --</div>
+    </div>
+  </div>
+
+  <!-- 情報グリッド -->
+  <div class="info-grid">
+    <div class="info-card">
+      <div class="info-card-label">CHECK INTERVAL</div>
+      <div class="info-card-value" id="intervalDisplay">10s</div>
+    </div>
+    <div class="info-card">
+      <div class="info-card-label">TOTAL DETECTED</div>
+      <div class="info-card-value" id="totalCount">0</div>
+    </div>
+    <div class="info-card">
+      <div class="info-card-label">LAST CHECK</div>
+      <div class="info-card-value" id="lastCheck">--:--:--</div>
+    </div>
+  </div>
+
+  <!-- 履歴 -->
+  <div class="history">
+    <div class="history-header">DETECTION HISTORY</div>
+    <div class="history-list" id="historyList">
+      <div class="no-history">— NO DATA —</div>
+    </div>
+  </div>
+
+  <!-- コントロール -->
+  <div class="controls">
+    <button class="btn primary" id="testBtn" onclick="triggerTest()">テスト発報</button>
+    <button class="btn" id="dismissBtn" onclick="dismissAlert()" style="display:none">アラート解除</button>
+    <div class="sound-toggle" onclick="toggleSound()">
+      <div class="toggle-dot" id="soundDot"></div>
+      <span id="soundLabel">音声・読み上げ ON</span>
+    </div>
+    <select class="interval-select" id="intervalSelect" onchange="changeInterval(this.value)">
+      <option value="10">10秒ごと</option>
+      <option value="30">30秒ごと</option>
+      <option value="60">1分ごと</option>
+    </select>
+    <div class="connection-info" id="connectionInfo">API接続待機中</div>
+  </div>
+
+</div>
+
+<script>
+// ===== 状態管理 =====
+let soundEnabled = true;
+let intervalSeconds = 10;
+let polling = null;
+let lastEventId = null;
+let totalCount = 0;
+let alertActive = false;
+let dismissTimer = null;
+const history = [];
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+// ===== 時計 =====
+function updateClock() {
+  const now = new Date();
+  const t = now.toLocaleTimeString('ja-JP', { hour12: false });
+  document.getElementById('clockDisplay').textContent = t;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ===== 音声読み上げ =====
+function speakAlert(data) {
+  if (!soundEnabled) return;
+  if (!('speechSynthesis' in window)) return;
+
+  const text = '緊急地震速報。震源地、' + data.location + '。マグニチュード' + data.magnitude + '。最大震度' + data.maxIntensity + '。';
+  const level = data.intensityNum >= 5 ? 5 : data.intensityNum >= 4 ? 4 : 3;
+
+  // サイレン時間の目安（ms）: 震度3=2100, 4=2800, 5=3000
+  const sirenDuration = level >= 5 ? 3200 : level >= 4 ? 2900 : 2200;
+
+  let cycle = 0;
+  const maxCycles = 2; // サイレン→読み上げ を2セット
+
+  function runCycle() {
+    if (!alertActive || cycle >= maxCycles) return;
+    cycle++;
+
+    // サイレン再生
+    playAlert(level);
+
+    // サイレンが終わったら読み上げ
+    setTimeout(() => {
+      if (!alertActive) return;
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'ja-JP';
+      utter.rate = 0.85;
+      utter.pitch = 1.0;
+      utter.volume = 1.0;
+      const voices = window.speechSynthesis.getVoices();
+      const jaVoice = voices.find(v => v.lang === 'ja-JP') || voices.find(v => v.lang.startsWith('ja'));
+      if (jaVoice) utter.voice = jaVoice;
+      // 読み上げ終了後、次のサイクルへ
+      utter.onend = () => {
+        if (alertActive && cycle < maxCycles) {
+          setTimeout(runCycle, 800);
+        }
+      };
+      window.speechSynthesis.speak(utter);
+    }, sirenDuration);
+  }
+
+  // 最初のサイクル開始
+  runCycle();
+}
+
+// ===== 警報音生成（サイレン） =====
+function playAlert(level) {
+  if (!soundEnabled) return;
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+
+  const ctx = audioCtx;
+  const now = ctx.currentTime + 0.05;
+
+  if (level >= 5) {
+    // 震度5以上: 急速上昇サイレン×3回
+    for (let i = 0; i < 3; i++) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'sawtooth';
+      const t = now + i * 1.0;
+      osc.frequency.setValueAtTime(400, t);
+      osc.frequency.exponentialRampToValueAtTime(1600, t + 0.7);
+      osc.frequency.setValueAtTime(400, t + 0.7);
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.5, t + 0.05);
+      gain.gain.setValueAtTime(0.5, t + 0.65);
+      gain.gain.linearRampToValueAtTime(0, t + 0.7);
+      osc.start(t); osc.stop(t + 0.75);
+    }
+  } else if (level >= 4) {
+    // 震度4: ウィーウィーサイレン×2回
+    for (let i = 0; i < 2; i++) {
+      for (let j = 0; j < 2; j++) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = 'sawtooth';
+        const t = now + i * 1.4 + j * 0.7;
+        const freqStart = j === 0 ? 500 : 900;
+        const freqEnd   = j === 0 ? 900 : 500;
+        osc.frequency.setValueAtTime(freqStart, t);
+        osc.frequency.linearRampToValueAtTime(freqEnd, t + 0.6);
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(0.45, t + 0.05);
+        gain.gain.setValueAtTime(0.45, t + 0.55);
+        gain.gain.linearRampToValueAtTime(0, t + 0.65);
+        osc.start(t); osc.stop(t + 0.7);
+      }
+    }
+  } else {
+    // 震度3: ピポピポ警告音×3回
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 2; j++) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = 'square';
+        const t = now + i * 0.7 + j * 0.35;
+        osc.frequency.setValueAtTime(j === 0 ? 880 : 660, t);
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(0.35, t + 0.02);
+        gain.gain.setValueAtTime(0.35, t + 0.25);
+        gain.gain.linearRampToValueAtTime(0, t + 0.3);
+        osc.start(t); osc.stop(t + 0.35);
+      }
+    }
+  }
+}
+
+// ===== 震度→数値 =====
+function intensityToNum(str) {
+  if (!str) return 0;
+  str = String(str).replace('震度', '');
+  if (str.includes('5弱')) return 5;
+  if (str.includes('5強')) return 5.5;
+  if (str.includes('6弱')) return 6;
+  if (str.includes('6強')) return 6.5;
+  return parseFloat(str) || 0;
+}
+
+// ===== アラート表示 =====
+function showAlert(data) {
+  const { time, location, magnitude, maxIntensity, intensityNum, eventId } = data;
+  const level = intensityNum >= 5 ? 5 : intensityNum >= 4 ? 4 : 3;
+
+  document.getElementById('standbyView').classList.add('hidden');
+  const alertView = document.getElementById('alertView');
+  alertView.classList.add('active');
+  alertView.className = `alert-display active level-${level}`;
+
+  const label = document.getElementById('alertLabel');
+  label.textContent = `震度${maxIntensity} 検知`;
+  label.className = `alert-label blink-fast level-${level}`;
+
+  document.getElementById('quakeTime').textContent = time;
+  document.getElementById('quakeLocation').textContent = location;
+  document.getElementById('quakeMag').textContent = magnitude;
+  document.getElementById('quakeIntensity').textContent = `最大震度 ${maxIntensity}`;
+
+  const monitor = document.getElementById('mainMonitor');
+  monitor.classList.add('alerting');
+  const flash = document.getElementById('flashOverlay');
+  flash.className = `flash-overlay active level-${level}`;
+
+  document.getElementById('dismissBtn').style.display = 'inline-block';
+
+  alertActive = true;
+
+  // バックグラウンド通知
+  sendNotification(data);
+
+  // サイレン→読み上げ を交互に繰り返す
+  speakAlert(data);
+
+  // 30秒後に自動解除
+  if (dismissTimer) clearTimeout(dismissTimer);
+  dismissTimer = setTimeout(dismissAlert, 30000);
+}
+
+function dismissAlert() {
+  alertActive = false;
+  if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null; }
+  document.getElementById('standbyView').classList.remove('hidden');
+  document.getElementById('alertView').classList.remove('active');
+  document.getElementById('mainMonitor').classList.remove('alerting');
+  document.getElementById('flashOverlay').className = 'flash-overlay';
+  document.getElementById('dismissBtn').style.display = 'none';
+}
+
+// ===== 履歴追加 =====
+function addHistory(data) {
+  history.unshift(data);
+  if (history.length > 20) history.pop();
+  totalCount++;
+  document.getElementById('totalCount').textContent = totalCount;
+
+  const list = document.getElementById('historyList');
+  if (list.querySelector('.no-history')) list.innerHTML = '';
+
+  const item = document.createElement('div');
+  item.className = 'history-item';
+  item.innerHTML = `
+    <span class="h-time">${data.time}</span>
+    <span class="h-loc">${data.location}</span>
+    <span class="h-mag">M${data.magnitude}</span>
+    <span class="h-int" style="color:${data.intensityNum>=5?'#ff0033':data.intensityNum>=4?'#ff6600':'#ffcc00'}">震度${data.maxIntensity}</span>
+  `;
+  list.prepend(item);
+  if (list.children.length > 15) list.removeChild(list.lastChild);
+}
+
+// ===== P2PQuake API ポーリング =====
+async function fetchEarthquakes() {
+  const now = new Date();
+  document.getElementById('lastCheck').textContent = now.toLocaleTimeString('ja-JP', { hour12: false });
+
+  try {
+    const res = await fetch('https://api.p2pquake.net/v2/history?codes=551&limit=5');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    document.getElementById('connectionInfo').textContent = 'API接続中';
+    document.getElementById('connectionInfo').className = 'connection-info connected';
+
+    const items = await res.json();
+    if (!Array.isArray(items) || items.length === 0) return;
+
+    // 最新イベント確認
+    const latest = items[0];
+    const eventId = latest.id;
+    if (eventId === lastEventId) return;
+
+    const eq = latest.earthquake;
+    if (!eq) return;
+
+    // 震度取得
+    const maxInt = eq.maxScale;
+    // maxScale: 10=1, 20=2, 30=3, 40=4, 45=5弱, 50=5強, 55=6弱, 60=6強, 70=7
+    const scaleMap = {
+      10:'1', 20:'2', 30:'3', 40:'4', 45:'5弱', 50:'5強', 55:'6弱', 60:'6強', 70:'7'
+    };
+    const intStr = scaleMap[maxInt] || String(maxInt);
+    const intNum = intensityToNum(intStr);
+
+    // 震度3以上チェック
+    if (intNum < 3) return;
+
+    lastEventId = eventId;
+
+    const hypo = eq.hypocenter || {};
+    const mag = hypo.magnitude != null ? hypo.magnitude : '不明';
+    const loc = hypo.name || '不明';
+
+    // 時刻
+    const dt = new Date(eq.time || latest.time);
+    const timeStr = isNaN(dt) ? '不明' : dt.toLocaleTimeString('ja-JP', { hour12: false });
+
+    const data = {
+      time: timeStr,
+      location: loc,
+      magnitude: mag,
+      maxIntensity: intStr,
+      intensityNum: intNum,
+      eventId,
+    };
+
+    addHistory(data);
+    showAlert(data);
+
+  } catch (e) {
+    console.error(e);
+    document.getElementById('connectionInfo').textContent = 'API接続エラー';
+    document.getElementById('connectionInfo').className = 'connection-info error';
+  }
+}
+
+// ===== ポーリング管理 =====
+function startPolling() {
+  if (polling) clearInterval(polling);
+  fetchEarthquakes();
+  polling = setInterval(fetchEarthquakes, intervalSeconds * 1000);
+}
+
+function changeInterval(val) {
+  intervalSeconds = parseInt(val);
+  document.getElementById('intervalDisplay').textContent = intervalSeconds < 60
+    ? intervalSeconds + 's'
+    : (intervalSeconds / 60) + 'm';
+  startPolling();
+}
+
+// ===== 音声トグル =====
+function toggleSound() {
+  soundEnabled = !soundEnabled;
+  document.getElementById('soundDot').className = 'toggle-dot' + (soundEnabled ? '' : ' off');
+  document.getElementById('soundLabel').textContent = soundEnabled ? '音声・読み上げ ON' : '音声・読み上げ OFF';
+}
+
+// ===== テスト発報 =====
+function triggerTest() {
+  // AudioContext解除のため最初のクリックで有効化
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+
+  const testData = {
+    time: new Date().toLocaleTimeString('ja-JP', { hour12: false }),
+    location: 'テスト（埼玉県南部）',
+    magnitude: '4.5',
+    maxIntensity: '3',
+    intensityNum: 3,
+    eventId: 'test-' + Date.now(),
+  };
+  addHistory(testData);
+  showAlert(testData);
+}
+
+
+// 音声リスト事前ロード
+if ('speechSynthesis' in window) {
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+}
+
+// ===== Service Workerからのメッセージ受信 =====
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', event => {
+    if (event.data && event.data.type === 'EARTHQUAKE') {
+      const d = event.data;
+      const scaleNumMap = {10:1,20:2,30:3,40:4,45:4.5,50:5,55:6,60:6.5,70:7};
+      const intNum = scaleNumMap[d.maxScale] || 0;
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('ja-JP', { hour12: false });
+      const data = {
+        time: timeStr,
+        location: d.location,
+        magnitude: d.magnitude,
+        maxIntensity: d.maxIntensity,
+        intensityNum: intNum,
+        eventId: d.eventId,
+      };
+      addHistory(data);
+      showAlert(data);
+    }
+  });
+}
+
+// ===== Service Worker登録 =====
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    console.log('SW登録成功:', reg.scope);
+  }).catch(err => {
+    console.log('SW登録失敗:', err);
+  });
+}
+
+// ===== 通知許可リクエスト =====
+async function requestNotificationPermission() {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'default') {
+    const perm = await Notification.requestPermission();
+    console.log('通知許可:', perm);
+  }
+}
+
+// ===== バックグラウンド通知送信 =====
+function sendNotification(data) {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.ready.then(reg => {
+    reg.showNotification('🚨 緊急地震速報', {
+      body: '震源地: ' + data.location + '  M' + data.magnitude + '  最大震度' + data.maxIntensity,
+      icon: 'icon-192.png',
+      badge: 'icon-192.png',
+      tag: 'earthquake-alert',
+      renotify: true,
+      requireInteraction: true,
+      vibrate: [300, 100, 300, 100, 300],
+    });
+  });
+}
+
+// ===== 初期化 =====
+requestNotificationPermission();
+startPolling();
+</script>
+</body>
+</html>
