@@ -1,6 +1,9 @@
 const CACHE_NAME = 'earthquake-monitor-v1';
-const ASSETS = ['/', '/index.html'];
-
+const ASSETS = 
+[
+  '/earthquake-monitor/',
+  '/earthquake-monitor/index.html'
+];
 // ===== インストール =====
 self.addEventListener('install', event => {
   event.waitUntil(
